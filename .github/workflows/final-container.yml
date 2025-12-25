@@ -1,4 +1,4 @@
-name: Final - Build/Push ACR + Deploy final-api
+name: Final - Build & Push ACR + Deploy final-api
 
 on:
   push:
@@ -20,24 +20,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Azure Login (AZURE_CREDENTIALS)
-        uses: azure/login@v2
+      # --- Build & Push image to ACR ---
+      - name: Log in to ACR
+        uses: docker/login-action@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Docker login to ACR (REGISTRY_*)
-        run: |
-          echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login $ACR_LOGIN_SERVER -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+          registry: ${{ env.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.AZUREAPPSERVICE_CONTAINERUSERNAME_EED5FE8AEA4C41238D6D39129CEDB8B1 }}
+          password: ${{ secrets.AZUREAPPSERVICE_CONTAINERPASSWORD_F1186E094C1D48DCBD68855B14B4229A }}
 
       - name: Build and push image
-        run: |
-          TAG=${{ github.sha }}
-          docker build -t $ACR_LOGIN_SERVER/$IMAGE_NAME:$TAG .
-          docker push $ACR_LOGIN_SERVER/$IMAGE_NAME:$TAG
-          echo "IMAGE=$ACR_LOGIN_SERVER/$IMAGE_NAME:$TAG" >> $GITHUB_ENV
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          file: ./Dockerfile
+          tags: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
 
-      - name: Deploy image to Web App
+      # --- Azure login (must match subscription where final-api exists) ---
+      - name: Login to Azure (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_9C83F68E2B0443EEB4A5D541F38FD060 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_E22AF262C03146E18D509A9757BB5509 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_92A9BD01AEB1497D8F44901669643C4F }}
+
+      # (Optional but strongly recommended) verify app exists in this subscription
+      - name: Verify webapp exists
+        run: |
+          az webapp show -g rg-final -n final-api -o table
+
+      # --- Deploy image to final-api ---
+      - name: Deploy to Azure Web App (container)
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ env.WEBAPP_NAME }}
-          images: ${{ env.IMAGE }}
+          images: ${{ env.ACR_LOGIN_SERVER }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
