@@ -20,7 +20,7 @@ const pool = new Pool({
 app.get("/", (req, res) => {
   res.json({
     status: "ok",
-    message: "API is running"
+    message: "API is runningss"
   });
 });
 
